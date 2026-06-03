@@ -1,0 +1,162 @@
+HTML
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sight Words 小超人</title>
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3406/3406828.png">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root { --bg-color: #fffcf2; --pink: #ffc2d1; --blue: #bde0fe; --green: #58cc02; }
+        body { font-family: sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; box-sizing: border-box; }
+        #start-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        #start-btn { padding: 20px 50px; font-size: 30px; border-radius: 50px; background: #ffda08; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .star-container { font-size: 35px; height: 50px; margin: 10px 0; color: #ffcc00; text-shadow: 1px 1px #888; }
+        .button-container { display: flex; justify-content: center; gap: 20px; width: 100%; margin: 20px 0; }
+        .word-btn { width: 140px; height: 140px; border-radius: 50%; border: 6px solid white; font-size: 26px; font-weight: bold; box-shadow: 0 8px 15px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; color: #444; transition: 0.2s; }
+        .btn-pink { background-color: var(--pink); }
+        .btn-blue { background-color: var(--blue); }
+        .correct-anim { transform: scale(1.1); border-color: var(--green); border-width: 8px; }
+        #controls { display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%; }
+        .action-btn { padding: 15px 30px; border-radius: 50px; border: 2px solid #ddd; background-color: #fff; font-size: 18px; font-weight: bold; width: 85%; max-width: 320px; cursor: pointer; }
+        .record-btn { background-color: #ffd6a5; }
+        .recording { background-color: #ff6b6b !important; color: white; animation: pulse 1s infinite; }
+        .play-btn { background-color: #c1fba4; }
+        #next-btn { background-color: var(--green); color: white; font-size: 24px; border: none; display: none; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <h1 style="margin-bottom: 30px;">Ready?</h1>
+        <button id="start-btn" onclick="startGame()">點我開始玩！</button>
+    </div>
+
+    <div id="header" style="font-size:24px; font-weight:bold; color:#555;">找到正確的單字！</div>
+    <div class="star-container" id="star-display"></div>
+
+    <div class="button-container">
+        <button id="btn-left" class="word-btn btn-pink" onclick="checkAnswer(0)">...</button>
+        <button id="btn-right" class="word-btn btn-blue" onclick="checkAnswer(1)">...</button>
+    </div>
+
+    <div id="controls">
+        <button class="action-btn" onclick="playTargetWord()">🔈 再聽一次老師唸</button>
+        <button id="record-btn" class="action-btn record-btn" onclick="toggleRecording()">🎤 錄音練習</button>
+        <button id="play-record-btn" class="action-btn play-btn" style="display:none;" onclick="playRecording()">▶️ 聽我的聲音</button>
+        <button id="next-btn" class="action-btn" onclick="handleNextStep()">🌟 答對了！下一題</button>
+    </div>
+
+    <script>
+        // 完整單字庫（已去重、整合大中班所有字清單）
+        const wordList = [
+            "to", "a", "it", "and", "on", "not", "picnic", "in", "the", "see", 
+            "how", "are", "you", "here", "go", "by", "will", "can", "don't", "like", 
+            "so", "says", "have", "goes", "get", "where", "at", "who", "is", "this", 
+            "play", "with", "big", "I", "be", "No", "tried", "can't", "ball", "one", 
+            "which", "should", "may", "first", "please", "What's", "need", "does", "look", "while", 
+            "David", "did", "his", "know", "That's", "for", "put", "if", "grow", "make", "would"
+        ];
+
+        let targetWord = "", currentOptions = [], stars = 0, mediaRecorder, audioChunks = [], canClick = true;
+        
+        // 載入 Final Fantasy 勝利音效
+        const victoryAudio = new Audio('https://www.myinstants.com/media/sounds/final-fantasy-vii-victory-fanfare-1.mp3');
+
+        function startGame() { 
+            document.getElementById('start-overlay').style.display = 'none'; 
+            victoryAudio.volume = 0;
+            victoryAudio.play().then(() => { victoryAudio.pause(); victoryAudio.volume = 1; }).catch(() => {});
+            initGame(); 
+        }
+
+        function initGame() {
+            canClick = true;
+            document.getElementById('next-btn').style.display = 'none';
+            document.getElementById('play-record-btn').style.display = 'none';
+            document.getElementById('record-btn').innerText = "🎤 錄音練習";
+            document.querySelectorAll('.word-btn').forEach(b => b.classList.remove('correct-anim'));
+            
+            const shuffled = [...wordList].sort(() => 0.5 - Math.random());
+            currentOptions = [shuffled[0], shuffled[1]];
+            targetWord = currentOptions[Math.floor(Math.random() * 2)];
+            
+            document.getElementById('btn-left').innerText = currentOptions[0];
+            document.getElementById('btn-right').innerText = currentOptions[1];
+            updateStars();
+            setTimeout(playTargetWord, 500);
+        }
+
+        function playTargetWord() {
+            window.speechSynthesis.cancel(); 
+            const u = new SpeechSynthesisUtterance(targetWord);
+            u.lang = 'en-US'; u.rate = 0.7; window.speechSynthesis.speak(u);
+        }
+
+        function checkAnswer(index) {
+            if (!canClick) return;
+            if (currentOptions[index] === targetWord) {
+                canClick = false;
+                stars++;
+                updateStars();
+                
+                // 答對先噴小花，並顯示下一題按鈕，讓孩子可以慢慢錄音
+                confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+                document.getElementById(index === 0 ? 'btn-left' : 'btn-right').classList.add('correct-anim');
+                document.getElementById('next-btn').style.display = 'block';
+            } else { 
+                alert("再聽一次喔！是 " + targetWord); 
+                playTargetWord(); 
+            }
+        }
+
+        function handleNextStep() {
+            if (stars >= 5) {
+                // 按下下一題時，如果是滿5星才放大慶祝和放音樂
+                confetti({ particleCount: 400, spread: 120, origin: { y: 0.5 } });
+                victoryAudio.currentTime = 0;
+                victoryAudio.play();
+                setTimeout(() => {
+                    alert("🎉 🏆 太棒了！集滿五顆星星囉！");
+                    stars = 0;
+                    initGame();
+                }, 100);
+            } else {
+                initGame();
+            }
+        }
+
+        function updateStars() { 
+            document.getElementById('star-display').innerText = stars === 0 ? "加油！" : "⭐".repeat(Math.min(stars, 5)); 
+        }
+
+        async function toggleRecording() {
+            const btn = document.getElementById('record-btn');
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                btn.classList.remove('recording');
+                btn.innerText = "✅ 錄好了";
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(audioChunks, { type: 'audio/wav' });
+                        window.recordedAudio = new Audio(URL.createObjectURL(blob));
+                        document.getElementById('play-record-btn').style.display = 'block';
+                    };
+                    mediaRecorder.start();
+                    btn.classList.add('recording');
+                    btn.innerText = "正在錄音...";
+                } catch (err) { alert("請開啟麥克風權限才能錄音喔！"); }
+            }
+        }
+
+        function playRecording() { if (window.recordedAudio) window.recordedAudio.play(); }
+    </script>
+</body>
+</html>
